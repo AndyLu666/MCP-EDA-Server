@@ -1,20 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-# =======================================
-# 用户可调参数
-# =======================================
 design="des"
 tech="FreePDK45"
 
-# CSV 索引
 g_idx=0       # imp_global.csv / placement.csv
 p_idx=0
 c_idx=0       # cts.csv
 
-# =======================================
-# 内部函数
-# =======================================
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 call() {
@@ -42,7 +34,6 @@ call "2. Synth Compile" \
   -H 'Content-Type: application/json' \
   -d "{\"design\":\"$design\",\"tech\":\"$tech\",\"version_idx\":0,\"force\":true}"
 
-# 取最新 synthesis 版本
 synth_dir=$(ls -dt ../designs/"$design"/"$tech"/synthesis/* | head -1)
 syn_ver=$(basename "$synth_dir")
 echo "⤷ Using syn_ver = $syn_ver"
@@ -55,7 +46,6 @@ call "3. Floorplan" \
   -H 'Content-Type: application/json' \
   -d "{\"design\":\"$design\",\"tech\":\"$tech\",\"syn_ver\":\"$syn_ver\",\"g_idx\":$g_idx,\"p_idx\":$p_idx,\"force\":true}"
 
-# implementation 版本号
 impl_ver="${syn_ver}__g${g_idx}_p${p_idx}"
 echo "⤷ Using impl_ver = $impl_ver"
 
