@@ -3,15 +3,12 @@ __pycache__/
 *.py[cod]
 *.log
 
-# Innovus/Synopsys 中间目录
 logs/
 pnr_out/
 pnr_logs/
 pnr_reports/
 
-# 临时合成/实现结果
 designs/*/*/synthesis/*/results/*.log
 
-# 操作系统 & 编辑器文件
 *.swp
 .DS_Store
