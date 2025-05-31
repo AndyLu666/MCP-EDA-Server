@@ -61,7 +61,6 @@ def run_shell(cmd: str, cwd: pathlib.Path, log_file: pathlib.Path):
 
 app = FastAPI(title="MCP · Synthesis-Setup Service")
 
-# <-- Changed the path here to match your pipeline script -->
 @app.post("/setup/run", response_model=SetupResp)
 def synth_setup(req: SetupReq):
     ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -82,7 +81,6 @@ def synth_setup(req: SetupReq):
     except Exception as e:
         return SetupResp(status=f"error: {e}", log_path=str(log_file), reports={})
 
-    # locate the newest synthesis folder and pull the check_design report
     synth_root = ROOT / "designs" / req.design / req.tech / "synthesis"
     synth_ver  = max(synth_root.iterdir(), key=lambda p: p.stat().st_mtime)
     rpt_path   = synth_ver / "reports" / "check_design.rpt"
