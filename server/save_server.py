@@ -2,7 +2,7 @@
 """
 MCP · Design Packaging / Save Service
 
-启动:
+Start:
     cd ~/proj/mcp-eda-example
     python3 server/save_server.py        # -> 0.0.0.0:3340
 
@@ -11,7 +11,7 @@ POST  /save/run
       "design"   : "des",
       "tech"     : "FreePDK45",
       "impl_ver" : "cpV1_clkP1_drcV1__g0_p0",
-      "archive"  : true,        # 生成 tar.gz
+      "archive"  : true,        # generate tar.gz
       "force"    : false
     }
 """
@@ -22,7 +22,6 @@ from typing import List, Dict, Optional
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-# ──────────── 环境 & 日志 ────────────
 os.environ["PATH"] = (
     "/opt/cadence/innovus221/tools/bin:"
     "/opt/cadence/genus172/bin:"
@@ -37,19 +36,16 @@ logging.basicConfig(
     ],
 )
 
-# ──────────── 常量 ────────────
 ROOT      = pathlib.Path(__file__).resolve().parent.parent
 BACKEND   = ROOT / "scripts" / "FreePDK45" / "backend"
 LOG_DIR   = ROOT / "logs" / "save"; LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-SAVE_TCL  = BACKEND / "8_save_design.tcl"     # 你上传的脚本
-# Innovus 保存后的主要文件（可按需要再加）
+SAVE_TCL  = BACKEND / "8_save_design.tcl"  
 ARTIFACTS = [
     "gds", "def", "lef", "spef", "sdc",
     "verilog", "sdf", "emp", "enc.dat"
 ]
 
-# ──────────── 数据模型 ────────────
 class SaveReq(BaseModel):
     design:     str
     tech:       str = "FreePDK45"
@@ -61,11 +57,9 @@ class SaveReq(BaseModel):
 class SaveResp(BaseModel):
     status:    str
     log_path:  str
-    artifacts: Dict[str, str]            # 各文件的绝对路径（或 “not found”）
-    tarball:   Optional[str] = None      # 生成的 tar.gz（当 archive=true 时）
+    artifacts: Dict[str, str]            
+    tarball:   Optional[str] = None     
 
-
-# ──────────── 工具函数 ────────────
 def run(cmd: str, logfile: pathlib.Path, cwd: pathlib.Path):
     with logfile.open("w") as lf:
         p = subprocess.Popen(
@@ -88,12 +82,10 @@ def save_run(req: SaveReq):
     if not impl_dir.exists():
         return SaveResp(status="error: implementation dir not found", log_path="", artifacts={})
 
-    # floorplan / route 之后应该至少有一个 *.enc.dat
     chk = list((impl_dir/"pnr_save").glob("*.enc.dat"))
     if not chk:
         return SaveResp(status="error: no .enc.dat (run placement/route first)", log_path="", artifacts={})
 
-    # ── 构造 Innovus 命令 ──────────────────────
     config_tcl = ROOT / "config.tcl"
     tech_tcl   = ROOT / "scripts" / req.tech / "tech.tcl"
     files_arg  = f'{config_tcl} {tech_tcl} {SAVE_TCL}'
@@ -104,7 +96,6 @@ def save_run(req: SaveReq):
 
     innovus_cmd = f'innovus -no_gui -batch -execute "{exec_cmd}" -files "{files_arg}"'
 
-    # ── 日志 & 运行 ───────────────────────────
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = LOG_DIR / f"{req.design}_save_{ts}.log"
 
@@ -113,14 +104,12 @@ def save_run(req: SaveReq):
     except Exception as e:
         return SaveResp(status=f"error: {e}", log_path=str(log_file), artifacts={})
 
-    # ── 收集产物 ──────────────────────────────
     out_dir = impl_dir / "pnr_out"
     artifacts = {}
     for ext in ARTIFACTS:
         globbed = list(out_dir.glob(f"*.{ext}"))
         artifacts[ext] = str(globbed[0]) if globbed else "not found"
 
-    # ── 打包成 tar.gz（可选） ──────────────────
     tar_path = None
     if req.archive:
         tar_path = ROOT / "deliverables" ; tar_path.mkdir(exist_ok=True)
