@@ -11,7 +11,6 @@ import subprocess, pathlib, datetime, os, csv, logging, sys, glob, gzip
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-# ────────────────── 环境 & 日志 ──────────────────
 os.environ["PATH"] = (
     "/opt/cadence/innovus221/tools/bin:"
     "/opt/cadence/genus172/bin:"
@@ -26,7 +25,6 @@ logging.basicConfig(
     ],
 )
 
-# ────────────────── 常量 ──────────────────
 ROOT    = pathlib.Path(__file__).resolve().parent.parent
 BACKEND = ROOT / "scripts" / "FreePDK45" / "backend"
 LOG_DIR = ROOT / "logs" / "floorplan"; LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -34,7 +32,6 @@ LOG_DIR = ROOT / "logs" / "floorplan"; LOG_DIR.mkdir(parents=True, exist_ok=True
 IMP_CSV = ROOT / "config" / "imp_global.csv"
 PLC_CSV = ROOT / "config" / "placement.csv"
 
-# 只映射 floorplan 需要的字段
 CSV_MAP = {
     "design_flow_effort":  "design_flow_effort",
     "design_power_effort": "design_power_effort",
@@ -42,7 +39,6 @@ CSV_MAP = {
     "target_util":         "target_util",
 }
 
-# ────────────────── 数据模型 ──────────────────
 class FPReq(BaseModel):
     design:      str
     tech:        str = "FreePDK45"
@@ -58,7 +54,6 @@ class FPResp(BaseModel):
     log_path: str
     report:   str
 
-# ────────────────── 工具函数 ──────────────────
 def read_csv_row(path: pathlib.Path, idx: int):
     rows = list(csv.DictReader(path.open()))
     if idx >= len(rows):
@@ -88,20 +83,16 @@ def floorplan_run(req: FPReq):
     if not syn_res.exists():
         return FPResp(status="error: synthesis results not found", log_path="", report="")
 
-    # impl 目录按 syn_ver + g_idx + p_idx 命名
     impl_ver = f"{req.syn_ver}__g{req.g_idx}_p{req.p_idx}"
     impl_dir = des_root / "implementation" / impl_ver
     if impl_dir.exists() and req.force:
         subprocess.run(["rm", "-rf", str(impl_dir)])
     impl_dir.mkdir(parents=True, exist_ok=True)
 
-    # 确保 pnr_save 目录存在
     (impl_dir / "pnr_save").mkdir(exist_ok=True)
 
-    # top 模块名
     top_name = req.top_module or req.design
 
-    # 环境变量注入
     env = {
         "NETLIST_DIR": str(syn_res),
         "TOP_NAME":    top_name,
@@ -111,7 +102,6 @@ def floorplan_run(req: FPReq):
     env.update({CSV_MAP[k]: v for k, v in read_csv_row(IMP_CSV, req.g_idx).items() if k in CSV_MAP})
     env.update({CSV_MAP[k]: v for k, v in read_csv_row(PLC_CSV, req.p_idx).items() if k in CSV_MAP})
 
-    # 要跑的 TCL 脚本列表
     scripts = [
         str(ROOT / "config.tcl"),
         str(ROOT / "scripts" / req.tech / "tech.tcl"),
@@ -120,7 +110,6 @@ def floorplan_run(req: FPReq):
     ]
     files_arg = " ".join(scripts)
 
-    # 构造 Innovus 执行串：source config/tech → set NETLIST_DIR → optional restore → source 后端脚本 → saveDesign
     exec_cmd_parts = [
         f'source "{scripts[0]}"',
         f'source "{scripts[1]}"',
@@ -145,7 +134,6 @@ def floorplan_run(req: FPReq):
         f'-files "{files_arg}"'
     )
 
-    # 日志文件
     ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = LOG_DIR / f"{req.design}_fp_{ts}.log"
 
@@ -154,7 +142,6 @@ def floorplan_run(req: FPReq):
     except Exception as e:
         return FPResp(status=f"error: {e}", log_path=str(log_file), report="")
 
-    # 读取 floorplan 报告
     rpt_dir = impl_dir / "pnr_reports"
     candidates = glob.glob(str(rpt_dir / "floorplan_summary.rpt*"))
     if candidates:
