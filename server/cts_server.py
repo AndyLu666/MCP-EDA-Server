@@ -3,11 +3,11 @@
 MCP · Clock-Tree Synthesis Service
 ---------------------------------
 
-启动:
+Start:
     cd ~/proj/mcp-eda-example
-    python3 server/cts_server.py      # 监听 0.0.0.0:3338
+    python3 server/cts_server.py      # 0.0.0.0:3338
 
-调用示例:
+Example:
     curl -X POST http://localhost:3338/cts/run \
          -H "Content-Type: application/json" \
          -d '{"design":"des","tech":"FreePDK45","impl_ver":"cpV1_clkP1_drcV1__g0_p0","g_idx":0,"c_idx":0,"force":true}'
@@ -25,7 +25,6 @@ import csv
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-# ────────────────── 环境与日志配置 ──────────────────
 os.environ["PATH"] = (
     "/opt/cadence/innovus221/tools/bin:"
     "/opt/cadence/genus172/bin:" + os.environ.get("PATH", "")
@@ -39,20 +38,17 @@ logging.basicConfig(
     ],
 )
 
-# ────────────────── 常量定义 ──────────────────
 ROOT     = pathlib.Path(__file__).resolve().parent.parent
 BACKEND  = ROOT / "scripts" / "FreePDK45" / "backend"
 LOG_DIR  = ROOT / "logs" / "cts"; LOG_DIR.mkdir(parents=True, exist_ok=True)
 IMP_CSV  = ROOT / "config" / "imp_global.csv"
 CTS_CSV  = ROOT / "config" / "cts.csv"
 
-# 手动注入的环境变量，供 Tcl 脚本使用
 MANUAL_ENV = {
     "CLKBUF_CELLS": "CLKBUF_X1 CLKBUF_X2 CLKBUF_X3 CLKBUF_X4 CLKBUF_X8",
     "CLKGT_CELLS":  "CLKGT_X1 CLKGT_X2",
 }
 
-# ────────────────── 请求/响应模型 ──────────────────
 class CtsReq(BaseModel):
     design:     str
     tech:       str = "FreePDK45"
@@ -67,7 +63,6 @@ class CtsResp(BaseModel):
     log_path:  str
     report:    str
 
-# ────────────────── 工具函数 ──────────────────
 def read_csv_row(path: pathlib.Path, idx: int) -> dict:
     rows = list(csv.DictReader(path.open()))
     if idx >= len(rows):
@@ -97,34 +92,29 @@ def run(cmd: str, log_file: pathlib.Path, cwd: pathlib.Path, env_extra: dict):
     if proc.returncode != 0:
         raise RuntimeError(f"command exited {proc.returncode}")
 
-# ────────────────── FastAPI 应用 ──────────────────
+# ────────────────── FastAPI ──────────────────
 app = FastAPI(title="MCP · CTS Service")
 
 @app.post("/cts/run", response_model=CtsResp)
 def cts_run(req: CtsReq):
-    # 基本路径检查
     des_root = ROOT / "designs" / req.design / req.tech
     impl_dir = des_root / "implementation" / req.impl_ver
     if not impl_dir.exists():
         return CtsResp(status="error: implementation dir not found", log_path="", report="")
 
-    # floorplan 快照
     enc_dat = impl_dir / "pnr_save" / "floorplan.enc.dat"
     if not enc_dat.exists():
         return CtsResp(status="error: floorplan.enc.dat not found", log_path="", report="")
 
-    # 报告文件
     rpt_dir   = impl_dir / "pnr_reports"
     cts_rpt   = rpt_dir / "cts_summary.rpt"
     extra_rpt = rpt_dir / "postcts_opt_max_density.rpt"
 
-    # 删除旧报告
     if req.force:
         for rpt in (cts_rpt, extra_rpt):
             if rpt.exists():
                 rpt.unlink()
 
-    # 顶层模块名
     cfg_path = ROOT / "designs" / req.design / "config.tcl"
     if req.top_module:
         top = req.top_module
@@ -132,7 +122,6 @@ def cts_run(req: CtsReq):
         parsed = parse_top_from_config(cfg_path)
         top = parsed or req.design
 
-    # 构造环境变量
     env = {"BASE_DIR": str(ROOT)}
     env.update(read_csv_row(IMP_CSV, req.g_idx))
     env.update(read_csv_row(CTS_CSV, req.c_idx))
@@ -140,7 +129,6 @@ def cts_run(req: CtsReq):
     env.setdefault("TOP_NAME",    top)
     env.setdefault("FILE_FORMAT", "verilog")
 
-    # Innovus 批处理命令
     config_tcl = ROOT / "config.tcl"
     tech_tcl   = ROOT / "scripts" / req.tech / "tech.tcl"
     cts_tcl    = BACKEND / "5_cts.tcl"
@@ -165,17 +153,14 @@ def cts_run(req: CtsReq):
         f'-files "{files_arg}"'
     )
 
-    # 日志文件
     ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = LOG_DIR / f"{req.design}_cts_{ts}.log"
 
-    # 执行并捕获错误
     try:
         run(innovus_cmd, log_file, impl_dir, env)
     except Exception as e:
         return CtsResp(status=f"error: {e}", log_path=str(log_file), report="")
 
-    # 读取 CTS 报告，若不存在则回退
     report_text = "cts_summary.rpt(.gz) not found"
     if cts_rpt.exists():
         report_text = cts_rpt.read_text()
