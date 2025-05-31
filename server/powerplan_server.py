@@ -4,7 +4,7 @@ MCP · Power-plan Service   (PG-stripe generation)
 
 Start:
     cd ~/proj/mcp-eda-example
-    python3 server/powerplan_server.py        # 监听 0.0.0.0:3336
+    python3 server/powerplan_server.py        # 0.0.0.0:3336
 
 Example:
     curl -X POST http://localhost:3336/power/run \
@@ -24,7 +24,6 @@ import csv
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-# ────────────────── 环境配置 & PATH ──────────────────
 os.environ["PATH"] = (
     "/opt/cadence/innovus221/tools/bin:"
     "/opt/cadence/genus172/bin:" + os.environ.get("PATH", "")
@@ -39,14 +38,12 @@ logging.basicConfig(
     ],
 )
 
-# ────────────────── 常量 ──────────────────
 ROOT    = pathlib.Path(__file__).resolve().parent.parent
 BACKEND = ROOT / "scripts" / "FreePDK45" / "backend"
 LOG_DIR = ROOT / "logs" / "powerplan"; LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 IMP_CSV = ROOT / "config" / "imp_global.csv"
 
-# ────────────────── 请求/响应模型 ──────────────────
 class PwrReq(BaseModel):
     design:     str
     tech:       str = "FreePDK45"
@@ -59,7 +56,6 @@ class PwrResp(BaseModel):
     log_path:  str
     report:    str
 
-# ────────────────── 工具函数 ──────────────────
 def read_csv_row(path: pathlib.Path, idx: int) -> dict:
     rows = list(csv.DictReader(path.open()))
     if idx >= len(rows):
@@ -111,7 +107,6 @@ def powerplan(req: PwrReq):
     if req.force and rpt_file.exists():
         rpt_file.unlink()
 
-    # --- determine top module ---
     cfg_path = ROOT / "designs" / req.design / "config.tcl"
     if req.top_module:
         top = req.top_module
@@ -119,13 +114,11 @@ def powerplan(req: PwrReq):
         parsed = parse_top_from_config(cfg_path)
         top = parsed if parsed else req.design
 
-    # --- prepare env ---
     env = {"BASE_DIR": str(ROOT)}
     env.update(read_csv_row(IMP_CSV, 0))  # 如果 g_idx 可配置，可改为 req.g_idx
     env.setdefault("TOP_NAME", top)
     env.setdefault("FILE_FORMAT", "verilog")
 
-    # --- Innovus 命令构造 ---
     config_tcl = ROOT / "config.tcl"
     tech_tcl   = ROOT / "scripts" / req.tech / "tech.tcl"
     power_tcl  = BACKEND / "3_powerplan.tcl"
@@ -154,7 +147,6 @@ def powerplan(req: PwrReq):
     except Exception as e:
         return PwrResp(status=f"error: {e}", log_path=str(log_file), report="")
 
-    # --- collect report ---
     report_text = "powerplan.rpt(.gz) not found"
     if rpt_file.exists():
         report_text = rpt_file.read_text(errors="ignore")
