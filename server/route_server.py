@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-MCP · Global & Detail Routing Service            (端口 3339)
+MCP · Global & Detail Routing Service            (3339)
 
 Usage
 -----
 cd ~/proj/mcp-eda-example
-python3 server/route_server.py        # 监听 0.0.0.0:3339
+python3 server/route_server.py        # 0.0.0.0:3339
 
-HTTP 例：
+HTTP Example：
 curl -X POST http://localhost:3339/route/run \
      -H "Content-Type: application/json" \
      -d '{"design":"des","tech":"FreePDK45","impl_ver":"cpV1_clkP1_drcV1__g0_p0","g_idx":0,"p_idx":0,"c_idx":0,"force":true}'
@@ -29,7 +29,6 @@ from typing import Dict
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-# ────────────────────────── 0. 环境 & 日志 ──────────────────────────
 BIN_DIRS = [
     "/opt/cadence/innovus221/tools/bin",
     "/opt/cadence/genus172/bin",
@@ -51,8 +50,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("route_server")
 
-# ────────────────────────── 1. 常量 ──────────────────────────
-BACKEND_DIR_TMPL = ROOT / "scripts" / "{tech}" / "backend"      # 运行时 format
+BACKEND_DIR_TMPL = ROOT / "scripts" / "{tech}" / "backend"   
 IMP_CSV = ROOT / "config" / "imp_global.csv"
 PLC_CSV = ROOT / "config" / "placement.csv"
 CTS_CSV = ROOT / "config" / "cts.csv"
@@ -65,17 +63,16 @@ ROUTE_RPTS = [
     "route_timing.rpt.gz",
 ]
 
-# ────────────────────────── 2. 数据模型 ──────────────────────────
 class RtReq(BaseModel):
-    design: str                                  # eg. "des"
-    tech: str = "FreePDK45"                      # 工艺，以 scripts/{tech}/backend 为准
-    impl_ver: str                                # 实现版本目录名
-    g_idx: int = 0                               # imp_global.csv 行号
-    p_idx: int = 0                               # placement.csv 行号
-    c_idx: int = 0                               # cts.csv 行号
-    force: bool = False                          # true=删除旧报告并覆盖 snapshot
+    design: str                           
+    tech: str = "FreePDK45"                  
+    impl_ver: str                              
+    g_idx: int = 0                             
+    p_idx: int = 0                              
+    c_idx: int = 0                              
+    force: bool = False                      
     top_module: str | None = Field(
-        None, description="override TOP_NAME; 留空则从 designs/{design}/config.tcl 里解析"
+        None, description="override TOP_NAME; if blank then from designs/{design}/config.tcl"
     )
 
 class RtResp(BaseModel):
@@ -83,7 +80,6 @@ class RtResp(BaseModel):
     log_path: str
     rpt_paths: Dict[str, str]                    # {report_name: relative_path | 'not found'}
 
-# ────────────────────────── 3. 工具函数 ──────────────────────────
 def read_csv_row(path: pathlib.Path, idx: int) -> dict:
     rows = list(csv.DictReader(path.open()))
     if not rows:
@@ -141,23 +137,19 @@ def route_run(req: RtReq):
     if not enc_dat.exists():
         return RtResp(status="error: floorplan.enc.dat not found", log_path="", rpt_paths={})
 
-    # reports 目录
     rpt_dir = impl_dir / "pnr_reports"
     rpt_dir.mkdir(exist_ok=True)
     if req.force:
         for rpt in ROUTE_RPTS:
             (rpt_dir / rpt).unlink(missing_ok=True)
-        # 若需彻底重跑，可同时删除旧 route snapshot
         (impl_dir / "pnr_save" / "route.enc.dat").unlink(missing_ok=True)
 
-    # 解析顶层名
     if req.top_module:
         top_name = req.top_module
     else:
         parsed = parse_top_from_config(ROOT / "designs" / req.design / "config.tcl")
         top_name = parsed or req.design
 
-    # 组合环境变量（后覆盖前）
     env = {
         "BASE_DIR": str(ROOT),
         "TOP_NAME": top_name,
@@ -167,7 +159,6 @@ def route_run(req: RtReq):
     env.update(read_csv_row(PLC_CSV, req.p_idx))
     env.update(read_csv_row(CTS_CSV, req.c_idx))
 
-    # backend 脚本路径
     backend_dir = pathlib.Path(str(BACKEND_DIR_TMPL).format(tech=req.tech))
     config_tcl  = ROOT / "config.tcl"
     tech_tcl    = ROOT / "scripts" / req.tech / "tech.tcl"
@@ -185,7 +176,6 @@ def route_run(req: RtReq):
         f'-files "{config_tcl} {tech_tcl} {route_tcl}"'
     )
 
-    # 运行
     ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = LOG_DIR / f"{req.design}_route_{ts}.log"
     try:
@@ -194,7 +184,6 @@ def route_run(req: RtReq):
         logger.exception("routing failed")
         return RtResp(status=f"error: {e}", log_path=str(log_file), rpt_paths={})
 
-    # 收集报告（只返回相对路径，避免巨大 JSON）
     rpt_paths: Dict[str, str] = {}
     for rpt in ROUTE_RPTS:
         fp = rpt_dir / rpt
@@ -202,7 +191,6 @@ def route_run(req: RtReq):
 
     return RtResp(status="ok", log_path=str(log_file), rpt_paths=rpt_paths)
 
-# ────────────────────────── 5. CLI ──────────────────────────
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("route_server:app", host="0.0.0.0", port=3339, reload=False)
