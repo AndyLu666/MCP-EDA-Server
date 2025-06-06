@@ -1,0 +1,37 @@
+
+Cadence Innovus(TM) Implementation System.
+Copyright 2021 Cadence Design Systems, Inc. All rights reserved worldwide.
+
+Version:	v21.17-s075_1, built Wed Mar 15 11:17:40 PDT 2023
+Options:	-no_gui -batch -files /home/yl996/proj/mcp-eda-example/designs/des/FreePDK45/implementation/cpV1_clkP1_drcV1__g0_p0/config.tcl /home/yl996/proj/mcp-eda-example/scripts/FreePDK45/tech.tcl /home/yl996/proj/mcp-eda-example/scripts/FreePDK45/backend/1_setup.tcl /home/yl996/proj/mcp-eda-example/scripts/FreePDK45/backend/2_floorplan.tcl 
+Date:		Thu Jun  5 22:19:25 2025
+Host:		hl279-cmp-00.egr.duke.edu (x86_64 w/Linux 4.18.0-553.54.1.el8_10.x86_64) (12cores*48cpus*Intel(R) Xeon(R) CPU E5-2687W v4 @ 3.00GHz 30720KB)
+OS:		Red Hat Enterprise Linux 8.10 (Ootpa)
+
+License:
+		[22:19:25.228778] Configured Lic search path (21.01-s002): 27400@license06.egr.duke.edu:27500@license01.egr.duke.edu
+
+		invs	Innovus Implementation System	21.1	checkout succeeded
+		8 CPU jobs allowed with the current license(s). Use setMultiCpuUsage to set your required CPU count.
+Create and set the environment variable TMPDIR to /tmp/innovus_temp_2217089_hl279-cmp-00.egr.duke.edu_yl996_gJdmsJ.
+
+Change the soft stacksize limit to 0.2%RAM (1030 mbytes). Set global soft_stack_size_limit to change the value.
+
+**INFO:  MMMC transition support version v31-84 
+
+Sourcing file "/home/yl996/proj/mcp-eda-example/designs/des/FreePDK45/implementation/cpV1_clkP1_drcV1__g0_p0/config.tcl" ...
+Sourcing file "/home/yl996/proj/mcp-eda-example/scripts/FreePDK45/tech.tcl" ...
+Sourcing file "/home/yl996/proj/mcp-eda-example/scripts/FreePDK45/backend/1_setup.tcl" ...
+**ERROR: (IMPSYT-6692):	Invalid return code while executing '/home/yl996/proj/mcp-eda-example/scripts/FreePDK45/backend/1_setup.tcl' was returned and script processing was stopped. Review the following error in '/home/yl996/proj/mcp-eda-example/scripts/FreePDK45/backend/1_setup.tcl' then restart.
+**ERROR: (IMPSYT-6693):	Error message: /home/yl996/proj/mcp-eda-example/scripts/FreePDK45/backend/1_setup.tcl: can't read "NETLIST_DIR": no such variable.
+
+*** Memory Usage v#1 (Current mem = 936.293M, initial mem = 486.906M) ***
+*** Message Summary: 0 warning(s), 2 error(s)
+
+--- Ending "Innovus" (totcpu=0:00:22.8, real=0:00:32.0, mem=936.3M) ---
+Lic Summary:
+[22:19:57.388419] Cdslmd servers: license06
+[22:19:57.388435] Feature usage summary:
+[22:19:57.388435] Innovus_Impl_System
+
+
