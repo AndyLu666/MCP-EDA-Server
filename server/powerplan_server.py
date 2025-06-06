@@ -4,12 +4,12 @@ MCP · Power-plan Service   (PG-stripe generation)
 
 Start:
     cd ~/proj/mcp-eda-example
-    python3 server/powerplan_server.py        # 0.0.0.0:3336
+    python3 server/powerplan_server.py        # 监听 0.0.0.0:3336
 
 Example:
     curl -X POST http://localhost:3336/power/run \
          -H "Content-Type: application/json" \
-         -d '{"design":"des","tech":"FreePDK45","impl_ver":"cpV1_clkP1_drcV1__g0_p0","force":true,"top_module":"des3"}'
+         -d '{"design":"des","tech":"FreePDK45","impl_ver":"cpV1_clkP1_drcV1__g0_p0","restore_enc":"<path_to_floorplan_enc>","force":true}'
 """
 from typing import Optional
 import subprocess
@@ -45,11 +45,12 @@ LOG_DIR = ROOT / "logs" / "powerplan"; LOG_DIR.mkdir(parents=True, exist_ok=True
 IMP_CSV = ROOT / "config" / "imp_global.csv"
 
 class PwrReq(BaseModel):
-    design:     str
-    tech:       str = "FreePDK45"
-    impl_ver:   str
-    force:      bool = False
-    top_module: Optional[str] = None
+    design:      str
+    tech:        str = "FreePDK45"
+    impl_ver:    str
+    restore_enc: str      
+    force:       bool = False
+    top_module:  Optional[str] = None
 
 class PwrResp(BaseModel):
     status:    str
@@ -85,6 +86,7 @@ def run(cmd: str, log_file: pathlib.Path, cwd: pathlib.Path, env_extra: dict):
     ) as p:
         for line in p.stdout:
             lf.write(line)
+        p.wait()
     if p.returncode != 0:
         raise RuntimeError(f"command exited {p.returncode}")
 
@@ -98,8 +100,8 @@ def powerplan(req: PwrReq):
     if not impl_dir.exists():
         return PwrResp(status="error: implementation dir not found", log_path="", report="")
 
-    enc_dat = impl_dir / "pnr_save" / "floorplan.enc.dat"
-    if not enc_dat.exists():
+    floor_enc = pathlib.Path(req.restore_enc)
+    if not floor_enc.exists():
         return PwrResp(status="error: floorplan.enc.dat not found", log_path="", report="")
 
     rpt_dir  = impl_dir / "pnr_reports"
@@ -115,28 +117,25 @@ def powerplan(req: PwrReq):
         top = parsed if parsed else req.design
 
     env = {"BASE_DIR": str(ROOT)}
-    env.update(read_csv_row(IMP_CSV, 0))  # 如果 g_idx 可配置，可改为 req.g_idx
+    env.update(read_csv_row(IMP_CSV, 0))  
     env.setdefault("TOP_NAME", top)
     env.setdefault("FILE_FORMAT", "verilog")
 
-    config_tcl = ROOT / "config.tcl"
     tech_tcl   = ROOT / "scripts" / req.tech / "tech.tcl"
     power_tcl  = BACKEND / "3_powerplan.tcl"
-
-    scripts = [str(config_tcl), str(tech_tcl), str(power_tcl)]
+    scripts = [str(tech_tcl), str(power_tcl)]
     files_arg = " ".join(scripts)
 
     exec_cmd = (
-        f'source "{config_tcl}"; '
-        f'source "{tech_tcl}"; '
-        f'restoreDesign "{enc_dat}" {top}; '
+        f'restoreDesign "{floor_enc.resolve()}" {top}; '
         f'source "{power_tcl}"; '
-        'report_power > pnr_reports/powerplan.rpt'
+        f'saveDesign pnr_save/powerplan.enc.dat; '
+        f'report_power > pnr_reports/powerplan.rpt'
     )
     innovus_cmd = (
         f'innovus -no_gui -batch '
-        f'-execute "{exec_cmd}" '
-        f'-files "{files_arg}"'
+        f'-files "{files_arg}" '
+        f'-execute "{exec_cmd}"'
     )
 
     ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -151,7 +150,7 @@ def powerplan(req: PwrReq):
     if rpt_file.exists():
         report_text = rpt_file.read_text(errors="ignore")
     else:
-        for cand in glob.glob(str(rpt_dir / "floorplan_summary.rpt*")):
+        for cand in glob.glob(str(rpt_dir / "powerplan.rpt*")):
             p = pathlib.Path(cand)
             if p.suffix == ".gz":
                 with gzip.open(p, "rt") as f:

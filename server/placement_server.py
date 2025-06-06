@@ -2,14 +2,14 @@
 """
 MCP · Placement Service (global + detail placement & pre-CTS optimization)
 
-Start：
+启动：
     cd ~/proj/mcp-eda-example
-    python3 server/placement_server.py      # 0.0.0.0:3337
+    python3 server/placement_server.py      # 监听 0.0.0.0:3337
 
-Example：
+示例：
     curl -X POST http://localhost:3337/place/run \
          -H "Content-Type: application/json" \
-         -d '{"design":"des","tech":"FreePDK45","impl_ver":"cpV1_clkP1_drcV1__g0_p0","g_idx":0,"p_idx":0,"force":true,"top_module":"des3"}'
+         -d '{"design":"des","tech":"FreePDK45","impl_ver":"cpV1_clkP1_drcV1__g0_p0","g_idx":0,"p_idx":0,"force":true,"top_module":"des3","restore_enc":"<path_to_powerplan_enc>"}'
 """
 from typing import Optional
 import subprocess, pathlib, datetime, os, logging, sys, csv
@@ -37,18 +37,19 @@ IMP_CSV  = ROOT / "config" / "imp_global.csv"
 PLC_CSV  = ROOT / "config" / "placement.csv"
 
 class PlReq(BaseModel):
-    design:      str                
-    tech:        str = "FreePDK45"   
-    impl_ver:    str              
-    g_idx:       int = 0            
-    p_idx:       int = 0           
-    force:       bool = False       
-    top_module:  Optional[str] = None  
+    design:      str
+    tech:        str = "FreePDK45"
+    impl_ver:    str
+    g_idx:       int = 0
+    p_idx:       int = 0
+    force:       bool = False
+    top_module:  Optional[str] = None
+    restore_enc: str  
 
 class PlResp(BaseModel):
-    status:     str          
-    log_path:   str            
-    report:     str            
+    status:     str
+    log_path:   str
+    report:     str
 
 def read_csv_row(path: pathlib.Path, idx: int) -> dict:
     rows = list(csv.DictReader(path.open()))
@@ -91,9 +92,9 @@ def place_run(req: PlReq):
     if not impl_dir.exists():
         return PlResp(status="error: implementation dir not found", log_path="", report="")
 
-    enc_dat = impl_dir / "pnr_save" / "floorplan.enc.dat"
-    if not enc_dat.exists():
-        return PlResp(status="error: floorplan.enc.dat not found", log_path="", report="")
+    powerplan_enc = pathlib.Path(req.restore_enc)
+    if not powerplan_enc.exists():
+        return PlResp(status="error: powerplan.enc.dat not found", log_path="", report="")
 
     rpt_dir = impl_dir / "pnr_reports"
     if req.force:
@@ -115,21 +116,24 @@ def place_run(req: PlReq):
     env.setdefault("TOP_NAME",    top)
     env.setdefault("FILE_FORMAT", "verilog")
 
+    tech_tcl     = ROOT / "scripts" / req.tech / "tech.tcl"
+    place_tcl    = BACKEND / "4_place.tcl"
     scripts = [
-        str(ROOT / "config.tcl"),
-        str(ROOT / "scripts" / req.tech / "tech.tcl"),
-        str(BACKEND / "4_place.tcl"),
+        str(tech_tcl),
+        str(place_tcl),
     ]
     files_arg = " ".join(scripts)
+
     exec_cmd = (
-        f'restoreDesign "{enc_dat}" {top}; '
-        f'source "{scripts[2]}"; '
-        'report_placement > pnr_reports/check_place.out'
+        f'restoreDesign "{powerplan_enc.resolve()}" {top}; '
+        f'source "{place_tcl}"; '
+        f'saveDesign pnr_save/placement.enc.dat; '
+        f'report_placement > pnr_reports/check_place.out'
     )
     innovus_cmd = (
-        "innovus -no_gui -batch "
-        f'-execute "{exec_cmd}" '
-        f'-files "{files_arg}"'
+        f'innovus -no_gui -batch '
+        f'-files "{files_arg}" '
+        f'-execute "{exec_cmd}"'
     )
 
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

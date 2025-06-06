@@ -3,11 +3,11 @@
 MCP · Clock-Tree Synthesis Service
 ---------------------------------
 
-Start:
+启动:
     cd ~/proj/mcp-eda-example
-    python3 server/cts_server.py      # 0.0.0.0:3338
+    python3 server/cts_server.py      # 监听 0.0.0.0:3338
 
-Example:
+调用示例:
     curl -X POST http://localhost:3338/cts/run \
          -H "Content-Type: application/json" \
          -d '{"design":"des","tech":"FreePDK45","impl_ver":"cpV1_clkP1_drcV1__g0_p0","g_idx":0,"c_idx":0,"force":true}'
@@ -92,7 +92,7 @@ def run(cmd: str, log_file: pathlib.Path, cwd: pathlib.Path, env_extra: dict):
     if proc.returncode != 0:
         raise RuntimeError(f"command exited {proc.returncode}")
 
-# ────────────────── FastAPI ──────────────────
+# ────────────────── FastAPI 应用 ──────────────────
 app = FastAPI(title="MCP · CTS Service")
 
 @app.post("/cts/run", response_model=CtsResp)
@@ -102,14 +102,13 @@ def cts_run(req: CtsReq):
     if not impl_dir.exists():
         return CtsResp(status="error: implementation dir not found", log_path="", report="")
 
-    enc_dat = impl_dir / "pnr_save" / "floorplan.enc.dat"
-    if not enc_dat.exists():
-        return CtsResp(status="error: floorplan.enc.dat not found", log_path="", report="")
+    placement_enc = impl_dir / "pnr_save" / "placement.enc.dat"
+    if not placement_enc.exists():
+        return CtsResp(status="error: placement.enc.dat not found", log_path="", report="")
 
     rpt_dir   = impl_dir / "pnr_reports"
     cts_rpt   = rpt_dir / "cts_summary.rpt"
     extra_rpt = rpt_dir / "postcts_opt_max_density.rpt"
-
     if req.force:
         for rpt in (cts_rpt, extra_rpt):
             if rpt.exists():
@@ -132,25 +131,17 @@ def cts_run(req: CtsReq):
     config_tcl = ROOT / "config.tcl"
     tech_tcl   = ROOT / "scripts" / req.tech / "tech.tcl"
     cts_tcl    = BACKEND / "5_cts.tcl"
-
-    scripts = [
-        str(config_tcl),
-        str(tech_tcl),
-        str(cts_tcl),
-    ]
+    scripts = [str(config_tcl), str(tech_tcl), str(cts_tcl)]
     files_arg = " ".join(scripts)
 
     exec_cmd = (
-        f'source "{scripts[0]}"; '
-        f'source "{scripts[1]}"; '
-        f'restoreDesign "{enc_dat}" {top}; '
-        f'source "{scripts[2]}"; '
-        'report_cts > pnr_reports/cts_summary.rpt'
+        f'restoreDesign "{placement_enc}" {top}; '
+        f'report_cts > pnr_reports/cts_summary.rpt'
     )
     innovus_cmd = (
         "innovus -no_gui -batch "
-        f'-execute "{exec_cmd}" '
-        f'-files "{files_arg}"'
+        f'-files "{files_arg}" '
+        f'-execute "{exec_cmd}"'
     )
 
     ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

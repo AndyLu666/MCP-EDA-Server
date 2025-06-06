@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-MCP Server - Synthesis Setup Stage
+MCP · Synthesis-Setup Service
 
 Start:
+    cd ~/proj/mcp-eda-example
     python3 server/synth_setup_server.py
 
 Test:
@@ -66,7 +67,6 @@ def synth_setup(req: SetupReq):
     ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = LOG_DIR / f"{req.design}_setup_{ts}.log"
 
-    # build the underlying shell command
     cmd  = (
         f"SYN_ONLY=1 {RUN_SH} "
         f"--design {req.design} "
@@ -82,9 +82,15 @@ def synth_setup(req: SetupReq):
         return SetupResp(status=f"error: {e}", log_path=str(log_file), reports={})
 
     synth_root = ROOT / "designs" / req.design / req.tech / "synthesis"
-    synth_ver  = max(synth_root.iterdir(), key=lambda p: p.stat().st_mtime)
-    rpt_path   = synth_ver / "reports" / "check_design.rpt"
-    rpt_text   = rpt_path.read_text() if rpt_path.exists() else "check_design.rpt not generated"
+    if not synth_root.exists():
+        return SetupResp(status="error: synthesis directory not found", log_path=str(log_file), reports={})
+
+    latest_ver = max(synth_root.iterdir(), key=lambda p: p.stat().st_mtime)
+    rpt_path   = latest_ver / "reports" / "check_design.rpt"
+    if rpt_path.exists():
+        rpt_text = rpt_path.read_text()
+    else:
+        rpt_text = "check_design.rpt not generated"
 
     return SetupResp(
         status   = "ok",

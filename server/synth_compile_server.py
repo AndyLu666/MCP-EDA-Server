@@ -53,7 +53,6 @@ def run_shell(cmd: str, logfile: pathlib.Path):
 
 app = FastAPI(title="MCP · Synthesis Compile Service")
 
-# ← Changed the path here so that your pipeline can call /compile/run
 @app.post("/compile/run", response_model=CompileResp)
 def compile_stage(req: CompileReq):
     ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

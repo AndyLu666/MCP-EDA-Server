@@ -1,30 +1,29 @@
 #!/usr/bin/env python3
 """
-MCP · Global & Detail Routing Service            (3339)
+MCP · Global & Detail Routing Service            (端口 3339)
 
 Usage
 -----
 cd ~/proj/mcp-eda-example
-python3 server/route_server.py        # 0.0.0.0:3339
+python3 server/route_server.py        # 监听 0.0.0.0:3339
 
-HTTP Example：
+HTTP 例：
 curl -X POST http://localhost:3339/route/run \
      -H "Content-Type: application/json" \
      -d '{"design":"des","tech":"FreePDK45","impl_ver":"cpV1_clkP1_drcV1__g0_p0","g_idx":0,"p_idx":0,"c_idx":0,"force":true}'
 """
-from __future__ import annotations
-
 import csv
 import datetime as dt
 import gzip
 import json
 import logging
+import logging.handlers
 import os
 import pathlib
 import re
 import subprocess
 import sys
-from typing import Dict
+from typing import Dict, Optional
 
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
@@ -35,7 +34,7 @@ BIN_DIRS = [
 ]
 os.environ["PATH"] = ":".join(BIN_DIRS + [os.environ.get("PATH", "")])
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent        # ~/proj/mcp-eda-example
+ROOT = pathlib.Path(__file__).resolve().parent.parent
 LOG_DIR = ROOT / "logs" / "route"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -50,7 +49,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("route_server")
 
-BACKEND_DIR_TMPL = ROOT / "scripts" / "{tech}" / "backend"   
+BACKEND_DIR_TMPL = ROOT / "scripts" / "{tech}" / "backend"
 IMP_CSV = ROOT / "config" / "imp_global.csv"
 PLC_CSV = ROOT / "config" / "placement.csv"
 CTS_CSV = ROOT / "config" / "cts.csv"
@@ -64,21 +63,21 @@ ROUTE_RPTS = [
 ]
 
 class RtReq(BaseModel):
-    design: str                           
-    tech: str = "FreePDK45"                  
-    impl_ver: str                              
-    g_idx: int = 0                             
-    p_idx: int = 0                              
-    c_idx: int = 0                              
-    force: bool = False                      
-    top_module: str | None = Field(
-        None, description="override TOP_NAME; if blank then from designs/{design}/config.tcl"
+    design: str
+    tech: str = "FreePDK45"
+    impl_ver: str
+    g_idx: int = 0
+    p_idx: int = 0
+    c_idx: int = 0
+    force: bool = False
+    top_module: Optional[str] = Field(
+        None, description="override TOP_NAME; 留空则从 designs/{design}/config.tcl 里解析"
     )
 
 class RtResp(BaseModel):
     status: str
     log_path: str
-    rpt_paths: Dict[str, str]                    # {report_name: relative_path | 'not found'}
+    rpt_paths: Dict[str, str]
 
 def read_csv_row(path: pathlib.Path, idx: int) -> dict:
     rows = list(csv.DictReader(path.open()))
@@ -89,7 +88,7 @@ def read_csv_row(path: pathlib.Path, idx: int) -> dict:
     return rows[idx]
 
 TOP_RE = re.compile(r"""^\s*set\s+TOP_NAME\s+"([^"]+)""")
-def parse_top_from_config(cfg: pathlib.Path) -> str | None:
+def parse_top_from_config(cfg: pathlib.Path) -> Optional[str]:
     if not cfg.exists():
         return None
     for line in cfg.read_text().splitlines():
@@ -109,7 +108,7 @@ def run(cmd: str, logfile: pathlib.Path, cwd: pathlib.Path, env_extra: dict):
         cmd,
         cwd=cwd,
         shell=True,
-        text=True,
+        universal_newlines=True,
         bufsize=1,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -123,7 +122,7 @@ def run(cmd: str, logfile: pathlib.Path, cwd: pathlib.Path, env_extra: dict):
     if p.returncode != 0:
         raise RuntimeError(f"Innovus exited with code {p.returncode}")
 
-# ────────────────────────── 4. FastAPI ──────────────────────────
+# ────────────────────────── FastAPI ──────────────────────────
 app = FastAPI(title="MCP · Routing Service")
 
 @app.post("/route/run", response_model=RtResp)
@@ -131,11 +130,12 @@ def route_run(req: RtReq):
     """Run Innovus 7_route.tcl (global+detail routing)."""
 
     impl_dir = ROOT / "designs" / req.design / req.tech / "implementation" / req.impl_ver
-    enc_dat  = impl_dir / "pnr_save" / "floorplan.enc.dat"
     if not impl_dir.exists():
         return RtResp(status="error: implementation dir not found", log_path="", rpt_paths={})
+
+    enc_dat = impl_dir / "pnr_save" / "cts.enc.dat"
     if not enc_dat.exists():
-        return RtResp(status="error: floorplan.enc.dat not found", log_path="", rpt_paths={})
+        return RtResp(status="error: cts.enc.dat not found", log_path="", rpt_paths={})
 
     rpt_dir = impl_dir / "pnr_reports"
     rpt_dir.mkdir(exist_ok=True)
@@ -160,20 +160,15 @@ def route_run(req: RtReq):
     env.update(read_csv_row(CTS_CSV, req.c_idx))
 
     backend_dir = pathlib.Path(str(BACKEND_DIR_TMPL).format(tech=req.tech))
-    config_tcl  = ROOT / "config.tcl"
-    tech_tcl    = ROOT / "scripts" / req.tech / "tech.tcl"
     route_tcl   = backend_dir / "7_route.tcl"
 
-    exec_cmd = (
-        f'source "{config_tcl}"; '
-        f'source "{tech_tcl}"; '
-        f'restoreDesign "{enc_dat}" "{top_name}"; '
-        f'source "{route_tcl}"'
-    )
+    files_arg = f'"{route_tcl}"'
+    exec_cmd = f'restoreDesign "{enc_dat}" "{top_name}"'
+
     innovus_cmd = (
         "innovus -no_gui -batch "
-        f'-execute "{exec_cmd}" '
-        f'-files "{config_tcl} {tech_tcl} {route_tcl}"'
+        f'-files {files_arg} '
+        f'-execute "{exec_cmd}"'
     )
 
     ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -2,7 +2,7 @@
 """
 MCP · Design Packaging / Save Service
 
-Start:
+启动:
     cd ~/proj/mcp-eda-example
     python3 server/save_server.py        # -> 0.0.0.0:3340
 
@@ -11,13 +11,21 @@ POST  /save/run
       "design"   : "des",
       "tech"     : "FreePDK45",
       "impl_ver" : "cpV1_clkP1_drcV1__g0_p0",
-      "archive"  : true,        # generate tar.gz
+      "archive"  : true,        # 生成 tar.gz
       "force"    : false
     }
 """
-# ────────────────────────────── imports ──────────────────────────────
-import datetime, gzip, logging, os, pathlib, subprocess, sys, tarfile, tempfile
-from typing import List, Dict, Optional
+
+import datetime
+import gzip
+import logging
+import os
+import pathlib
+import subprocess
+import sys
+import tarfile
+
+from typing import Dict, Optional
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -40,7 +48,7 @@ ROOT      = pathlib.Path(__file__).resolve().parent.parent
 BACKEND   = ROOT / "scripts" / "FreePDK45" / "backend"
 LOG_DIR   = ROOT / "logs" / "save"; LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-SAVE_TCL  = BACKEND / "8_save_design.tcl"  
+SAVE_TCL  = BACKEND / "8_save_design.tcl"
 ARTIFACTS = [
     "gds", "def", "lef", "spef", "sdc",
     "verilog", "sdf", "emp", "enc.dat"
@@ -57,8 +65,8 @@ class SaveReq(BaseModel):
 class SaveResp(BaseModel):
     status:    str
     log_path:  str
-    artifacts: Dict[str, str]            
-    tarball:   Optional[str] = None     
+    artifacts: Dict[str, str]
+    tarball:   Optional[str] = None
 
 def run(cmd: str, logfile: pathlib.Path, cwd: pathlib.Path):
     with logfile.open("w") as lf:
@@ -71,7 +79,7 @@ def run(cmd: str, logfile: pathlib.Path, cwd: pathlib.Path):
             lf.write(line)
         p.wait()
     if p.returncode != 0:
-        raise RuntimeError(f"command exit {p.returncode}")
+        raise RuntimeError("command exit %d" % p.returncode)
 
 # ──────────── FastAPI ────────────
 app = FastAPI(title="MCP · Save Service")
@@ -82,39 +90,38 @@ def save_run(req: SaveReq):
     if not impl_dir.exists():
         return SaveResp(status="error: implementation dir not found", log_path="", artifacts={})
 
-    chk = list((impl_dir/"pnr_save").glob("*.enc.dat"))
-    if not chk:
-        return SaveResp(status="error: no .enc.dat (run placement/route first)", log_path="", artifacts={})
+    route_enc = impl_dir / "pnr_save" / "route.enc.dat"
+    if not route_enc.exists():
+        return SaveResp(status="error: route.enc.dat not found", log_path="", artifacts={})
 
     config_tcl = ROOT / "config.tcl"
     tech_tcl   = ROOT / "scripts" / req.tech / "tech.tcl"
-    files_arg  = f'{config_tcl} {tech_tcl} {SAVE_TCL}'
+    files_arg  = "{} {} {}".format(config_tcl, tech_tcl, SAVE_TCL)
 
-    exec_cmd = f'source "{config_tcl}"; source "{tech_tcl}"; ' \
-               f'restoreDesign "{chk[0]}" {req.top_module or req.design}; ' \
-               f'source "{SAVE_TCL}"'
+    top = req.top_module if req.top_module else req.design
+    exec_cmd = 'restoreDesign "{}" {}; source "{}"'.format(route_enc, top, SAVE_TCL)
 
-    innovus_cmd = f'innovus -no_gui -batch -execute "{exec_cmd}" -files "{files_arg}"'
+    innovus_cmd = 'innovus -no_gui -batch -execute "{}" -files "{}"'.format(exec_cmd, files_arg)
 
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = LOG_DIR / f"{req.design}_save_{ts}.log"
+    log_file = LOG_DIR / "{}_save_{}.log".format(req.design, ts)
 
     try:
         run(innovus_cmd, log_file, impl_dir)
     except Exception as e:
-        return SaveResp(status=f"error: {e}", log_path=str(log_file), artifacts={})
+        return SaveResp(status="error: %s" % e, log_path=str(log_file), artifacts={})
 
     out_dir = impl_dir / "pnr_out"
     artifacts = {}
     for ext in ARTIFACTS:
-        globbed = list(out_dir.glob(f"*.{ext}"))
-        artifacts[ext] = str(globbed[0]) if globbed else "not found"
+        matches = list(out_dir.glob("*.{}".format(ext)))
+        artifacts[ext] = str(matches[0]) if matches else "not found"
 
     tar_path = None
     if req.archive:
-        tar_path = ROOT / "deliverables" ; tar_path.mkdir(exist_ok=True)
-        tar_path = tar_path / f"{req.design}_{req.impl_ver}_{ts}.tgz"
-        with tarfile.open(tar_path, "w:gz") as tar:
+        deliver_dir = ROOT / "deliverables"; deliver_dir.mkdir(exist_ok=True)
+        tar_path = deliver_dir / "{}_{}_{}.tgz".format(req.design, req.impl_ver, ts)
+        with tarfile.open(str(tar_path), "w:gz") as tar:
             for fp in artifacts.values():
                 if fp != "not found":
                     tar.add(fp, arcname=pathlib.Path(fp).name)
