@@ -139,22 +139,28 @@ def floorplan_run(req: FPReq):
     floorplan_tcl = BACKEND / "2_floorplan.tcl"
 
     files_list = [
-        str(config_tcl),
+        # str(config_tcl),
         str(tech_tcl),
         str(setup_tcl),
         str(floorplan_tcl),
     ]
     files_arg = " ".join(files_list)
 
+    # TODO: modify clock_name and clock_period to be user input (they are design dependent)
+    clock_name = "clk"
+    clock_period = "1."
+
     exec_cmd = (
         f'set NETLIST_DIR "{syn_res}"; '
         f'set TOP_NAME "{top_name}"; '
-        f'{restore_arg}'
+        f'set FILE_FORMAT "verilog"; '
+        f'set CLOCK_NAME "{clock_name}"; '
+        f'set clk_period {clock_period}; '
     )
 
     innovus_cmd = (
         f'innovus -no_gui -batch '
-        f'-execute "{exec_cmd}" '
+        f'-execute \'{exec_cmd}\' '
         f'-files "{files_arg}"'
     )
 
