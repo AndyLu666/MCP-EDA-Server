@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *.log
 
+venv/
 logs/
 pnr_out/
 pnr_logs/
