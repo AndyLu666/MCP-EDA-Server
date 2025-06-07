@@ -1,33 +1,24 @@
 #!/usr/bin/env python3
 """
-MCP · Clock-Tree Synthesis Service
----------------------------------
+MCP · Clock-Tree Synthesis Service (port 3338)
+----------------------------------------------
 
-启动:
-    cd ~/proj/mcp-eda-example
-    python3 server/cts_server.py      # 监听 0.0.0.0:3338
+REST  /cts/run  →  Innovus 5_cts.tcl
 
 调用示例:
     curl -X POST http://localhost:3338/cts/run \
          -H "Content-Type: application/json" \
          -d '{"design":"des","tech":"FreePDK45","impl_ver":"cpV1_clkP1_drcV1__g0_p0","g_idx":0,"c_idx":0,"force":true}'
 """
-from typing import Optional
-import subprocess
-import pathlib
-import datetime
-import os
-import logging
-import sys
-import glob
-import gzip
-import csv
+from typing import Optional, Dict
+import subprocess, pathlib, datetime, os, logging, sys, csv, glob, gzip
 from fastapi import FastAPI
 from pydantic import BaseModel
 
 os.environ["PATH"] = (
     "/opt/cadence/innovus221/tools/bin:"
-    "/opt/cadence/genus172/bin:" + os.environ.get("PATH", "")
+    "/opt/cadence/genus172/bin:"
+    + os.environ.get("PATH", "")
 )
 logging.basicConfig(
     level=logging.INFO,
@@ -44,11 +35,6 @@ LOG_DIR  = ROOT / "logs" / "cts"; LOG_DIR.mkdir(parents=True, exist_ok=True)
 IMP_CSV  = ROOT / "config" / "imp_global.csv"
 CTS_CSV  = ROOT / "config" / "cts.csv"
 
-MANUAL_ENV = {
-    "CLKBUF_CELLS": "CLKBUF_X1 CLKBUF_X2 CLKBUF_X3 CLKBUF_X4 CLKBUF_X8",
-    "CLKGT_CELLS":  "CLKGT_X1 CLKGT_X2",
-}
-
 class CtsReq(BaseModel):
     design:     str
     tech:       str = "FreePDK45"
@@ -63,7 +49,7 @@ class CtsResp(BaseModel):
     log_path:  str
     report:    str
 
-def read_csv_row(path: pathlib.Path, idx: int) -> dict:
+def read_csv_row(path: pathlib.Path, idx: int) -> Dict[str,str]:
     rows = list(csv.DictReader(path.open()))
     if idx >= len(rows):
         raise IndexError(f"{path.name}: row {idx} out of range (total {len(rows)})")
@@ -77,22 +63,28 @@ def parse_top_from_config(cfg: pathlib.Path) -> str:
             return line.split('"')[1]
     return ""
 
-def run(cmd: str, log_file: pathlib.Path, cwd: pathlib.Path, env_extra: dict):
+def run(cmd: str, log_file: pathlib.Path, cwd: pathlib.Path, env_extra: Dict[str,str]):
     env = os.environ.copy()
     env.update(env_extra)
-    with log_file.open("w") as lf:
-        proc = subprocess.Popen(
-            cmd, cwd=cwd, shell=True, universal_newlines=True,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            executable="/bin/bash", env=env
-        )
-        for line in proc.stdout:
+    logging.info("launch Innovus → %s", cmd)
+    with log_file.open("w") as lf, subprocess.Popen(
+        cmd,
+        cwd=str(cwd),
+        shell=True,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        executable="/bin/bash",
+        env=env,
+        bufsize=1
+    ) as p:
+        for line in iter(p.stdout.readline, ""):
             lf.write(line)
-        proc.wait()
-    if proc.returncode != 0:
-        raise RuntimeError(f"command exited {proc.returncode}")
+        p.wait()
+    if p.returncode != 0:
+        raise RuntimeError(f"Innovus exited with code {p.returncode}")
 
-# ────────────────── FastAPI 应用 ──────────────────
+# ──────────── FastAPI 应用 ────────────
 app = FastAPI(title="MCP · CTS Service")
 
 @app.post("/cts/run", response_model=CtsResp)
@@ -102,62 +94,62 @@ def cts_run(req: CtsReq):
     if not impl_dir.exists():
         return CtsResp(status="error: implementation dir not found", log_path="", report="")
 
-    placement_enc = impl_dir / "pnr_save" / "placement.enc.dat"
-    if not placement_enc.exists():
-        return CtsResp(status="error: placement.enc.dat not found", log_path="", report="")
+    pnr_save = impl_dir / "pnr_save"
+    enc_candidates = [
+        pnr_save / "place.enc.dat",
+        pnr_save / "powerplan.enc.dat",
+        pnr_save / "floorplan.enc.dat",
+    ]
+    enc_dat = next((p for p in enc_candidates if p.exists()), None)
+    if enc_dat is None:
+        return CtsResp(status="error: no previous .enc.dat found", log_path="", report="")
 
-    rpt_dir   = impl_dir / "pnr_reports"
-    cts_rpt   = rpt_dir / "cts_summary.rpt"
-    extra_rpt = rpt_dir / "postcts_opt_max_density.rpt"
+    rpt_dir  = impl_dir / "pnr_reports"
+    rpt_dir.mkdir(exist_ok=True)
+    rpt_file = rpt_dir / "cts_summary.rpt"
+
     if req.force:
-        for rpt in (cts_rpt, extra_rpt):
-            if rpt.exists():
-                rpt.unlink()
+        rpt_file.unlink(missing_ok=True)
+        (pnr_save / "cts.enc.dat").unlink(missing_ok=True)
 
-    cfg_path = ROOT / "designs" / req.design / "config.tcl"
-    if req.top_module:
-        top = req.top_module
-    else:
-        parsed = parse_top_from_config(cfg_path)
-        top = parsed or req.design
+    cfg_tcl  = ROOT / "designs" / req.design / "config.tcl"
+    top      = req.top_module or parse_top_from_config(cfg_tcl) or req.design
 
-    env = {"BASE_DIR": str(ROOT)}
+    env: Dict[str,str] = {
+        "BASE_DIR":   str(ROOT),
+        "TOP_NAME":   top,
+        "FILE_FORMAT":"verilog",
+    }
     env.update(read_csv_row(IMP_CSV, req.g_idx))
     env.update(read_csv_row(CTS_CSV, req.c_idx))
-    env.update(MANUAL_ENV)
-    env.setdefault("TOP_NAME",    top)
-    env.setdefault("FILE_FORMAT", "verilog")
 
-    config_tcl = ROOT / "config.tcl"
-    tech_tcl   = ROOT / "scripts" / req.tech / "tech.tcl"
-    cts_tcl    = BACKEND / "5_cts.tcl"
-    scripts = [str(config_tcl), str(tech_tcl), str(cts_tcl)]
-    files_arg = " ".join(scripts)
+    tech_tcl = ROOT / "scripts" / req.tech / "tech.tcl"
+    cts_tcl  = BACKEND / "5_cts.tcl"
+
+    files_arg = f"{tech_tcl} {cts_tcl}"
 
     exec_cmd = (
-        f'restoreDesign "{placement_enc}" {top}; '
-        f'report_cts > pnr_reports/cts_summary.rpt'
+        f'restoreDesign "{enc_dat}" "{top}"; '
+        'saveDesign pnr_save/cts.enc.dat; '
+        f'report_ccopt_summary > {rpt_file}'
     )
+
     innovus_cmd = (
         "innovus -no_gui -batch "
-        f'-files "{files_arg}" '
-        f'-execute "{exec_cmd}"'
+        f'-execute "{exec_cmd}" '
+        f'-files "{files_arg}"'
     )
 
-    ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = LOG_DIR / f"{req.design}_cts_{ts}.log"
-
+    log_file = LOG_DIR / f"{req.design}_cts_{datetime.datetime.now():%Y%m%d_%H%M%S}.log"
     try:
         run(innovus_cmd, log_file, impl_dir, env)
     except Exception as e:
         return CtsResp(status=f"error: {e}", log_path=str(log_file), report="")
 
-    report_text = "cts_summary.rpt(.gz) not found"
-    if cts_rpt.exists():
-        report_text = cts_rpt.read_text()
-    elif extra_rpt.exists():
-        report_text = extra_rpt.read_text()
+    if rpt_file.exists():
+        report_text = rpt_file.read_text()
     else:
+        report_text = "cts_summary.rpt(.gz) not found"
         for cand in glob.glob(str(rpt_dir / "*.rpt*")):
             p = pathlib.Path(cand)
             if p.suffix == ".gz":
