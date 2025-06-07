@@ -9,10 +9,16 @@ MCP · Placement Service (global + detail placement & pre-CTS optimization)
 示例：
     curl -X POST http://localhost:3337/place/run \
          -H "Content-Type: application/json" \
-         -d '{"design":"des","tech":"FreePDK45","impl_ver":"cpV1_clkP1_drcV1__g0_p0","g_idx":0,"p_idx":0,"force":true,"top_module":"des3","restore_enc":"<path_to_powerplan_enc>"}'
+         -d '{"design":"des","tech":"FreePDK45","impl_ver":"cpV1_clkP1_drcV1__g0_p0","g_idx":0,"p_idx":0,"restore_enc":"/path/to/powerplan.enc.dat","force":true}'
 """
 from typing import Optional
-import subprocess, pathlib, datetime, os, logging, sys, csv
+import subprocess
+import pathlib
+import datetime
+import os
+import logging
+import sys
+import csv
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -30,11 +36,11 @@ logging.basicConfig(
     ],
 )
 
-ROOT     = pathlib.Path(__file__).resolve().parent.parent
-BACKEND  = ROOT / "scripts" / "FreePDK45" / "backend"
-LOG_DIR  = ROOT / "logs" / "placement"; LOG_DIR.mkdir(parents=True, exist_ok=True)
-IMP_CSV  = ROOT / "config" / "imp_global.csv"
-PLC_CSV  = ROOT / "config" / "placement.csv"
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+BACKEND = ROOT / "scripts" / "FreePDK45" / "backend"
+LOG_DIR = ROOT / "logs" / "placement"; LOG_DIR.mkdir(parents=True, exist_ok=True)
+IMP_CSV = ROOT / "config" / "imp_global.csv"
+PLC_CSV = ROOT / "config" / "placement.csv"
 
 class PlReq(BaseModel):
     design:      str
@@ -43,13 +49,14 @@ class PlReq(BaseModel):
     g_idx:       int = 0
     p_idx:       int = 0
     force:       bool = False
+    restore_enc: Optional[str] = None
     top_module:  Optional[str] = None
-    restore_enc: str  
 
 class PlResp(BaseModel):
     status:     str
     log_path:   str
     report:     str
+
 
 def read_csv_row(path: pathlib.Path, idx: int) -> dict:
     rows = list(csv.DictReader(path.open()))
@@ -57,18 +64,13 @@ def read_csv_row(path: pathlib.Path, idx: int) -> dict:
         raise IndexError(f"{path.name}: row {idx} out of range (total {len(rows)})")
     return rows[idx]
 
-def parse_top_from_config(cfg: pathlib.Path) -> str:
-    for line in cfg.read_text().splitlines():
-        if line.startswith("set TOP_NAME"):
-            return line.split('"')[1]
-    return ""
 
 def run(cmd: str, log_file: pathlib.Path, cwd: pathlib.Path, env_extra: dict):
     env = os.environ.copy()
     env.update(env_extra)
     with log_file.open("w") as lf, subprocess.Popen(
         cmd,
-        cwd=cwd,
+        cwd=str(cwd),
         shell=True,
         universal_newlines=True,
         stdout=subprocess.PIPE,
@@ -82,7 +84,6 @@ def run(cmd: str, log_file: pathlib.Path, cwd: pathlib.Path, env_extra: dict):
     if p.returncode != 0:
         raise RuntimeError(f"command exited {p.returncode}")
 
-# ────────────────── FastAPI App ──────────────────
 app = FastAPI(title="MCP · Placement Service")
 
 @app.post("/place/run", response_model=PlResp)
@@ -92,48 +93,36 @@ def place_run(req: PlReq):
     if not impl_dir.exists():
         return PlResp(status="error: implementation dir not found", log_path="", report="")
 
-    powerplan_enc = pathlib.Path(req.restore_enc)
-    if not powerplan_enc.exists():
-        return PlResp(status="error: powerplan.enc.dat not found", log_path="", report="")
+    if not req.restore_enc:
+        return PlResp(status="error: restore_enc not provided", log_path="", report="")
+    restore_abs = pathlib.Path(req.restore_enc).resolve()
+    if not restore_abs.exists():
+        return PlResp(status="error: provided restore_enc not found", log_path="", report="")
 
-    rpt_dir = impl_dir / "pnr_reports"
-    if req.force:
-        for rpt in ("check_place.out",):
-            p = rpt_dir / rpt
-            if p.exists():
-                p.unlink()
-
-    cfg_path = ROOT / "designs" / req.design / "config.tcl"
-    if req.top_module:
-        top = req.top_module
-    else:
-        parsed = parse_top_from_config(cfg_path)
-        top = parsed if parsed else req.design
+    top_name = req.top_module or req.design
 
     env = {"BASE_DIR": str(ROOT)}
     env.update(read_csv_row(IMP_CSV, req.g_idx))
     env.update(read_csv_row(PLC_CSV, req.p_idx))
-    env.setdefault("TOP_NAME",    top)
+    env.setdefault("TOP_NAME",    top_name)
     env.setdefault("FILE_FORMAT", "verilog")
 
-    tech_tcl     = ROOT / "scripts" / req.tech / "tech.tcl"
-    place_tcl    = BACKEND / "4_place.tcl"
-    scripts = [
-        str(tech_tcl),
-        str(place_tcl),
-    ]
-    files_arg = " ".join(scripts)
+    local_config = impl_dir / "config.tcl"
+    if not local_config.exists():
+        subprocess.run(["cp", str(ROOT / "config.tcl"), str(local_config)], check=True)
 
-    exec_cmd = (
-        f'restoreDesign "{powerplan_enc.resolve()}" {top}; '
-        f'source "{place_tcl}"; '
-        f'saveDesign pnr_save/placement.enc.dat; '
-        f'report_placement > pnr_reports/check_place.out'
-    )
+    config_tcl = local_config
+    tech_tcl   = ROOT / "scripts" / req.tech / "tech.tcl"
+    place_tcl  = BACKEND / "4_place.tcl"
+    files_list = [str(config_tcl), str(tech_tcl), str(place_tcl)]
+    files_arg = " ".join(files_list)
+
+    exec_cmd = f'restoreDesign "{restore_abs}" {top_name}; '
+
     innovus_cmd = (
         f'innovus -no_gui -batch '
-        f'-files "{files_arg}" '
-        f'-execute "{exec_cmd}"'
+        f'-execute "{exec_cmd}" '
+        f'-files "{files_arg}"'
     )
 
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -144,11 +133,16 @@ def place_run(req: PlReq):
     except Exception as e:
         return PlResp(status=f"error: {e}", log_path=str(log_file), report="")
 
-    report_file = rpt_dir / "check_place.out"
-    if report_file.exists():
-        report_text = report_file.read_text()
-    else:
-        report_text = "check_place.out not found"
+    enc_path = impl_dir / "pnr_save" / "placement.enc.dat"
+    if not enc_path.exists():
+        return PlResp(
+            status="error: Placement did not produce placement.enc.dat",
+            log_path=str(log_file),
+            report=""
+        )
+
+    rpt = impl_dir / "pnr_reports" / "check_place.out"
+    report_text = rpt.read_text(errors="ignore") if rpt.exists() else "check_place.out not found"
 
     return PlResp(status="ok", log_path=str(log_file), report=report_text)
 
