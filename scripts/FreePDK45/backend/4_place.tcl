@@ -53,7 +53,7 @@ report_timing -max_paths 100 > pnr_reports/place_opt_timing.rpt.gz
 # Log info & save design
 #-------------------------------------------------------------------------------
 
-# do_power_analysis place_opt_power
+do_power_analysis place_opt_power
 
 defOut pnr_out/place.def
 summaryReport -outfile pnr_reports/placement_summary.rpt
