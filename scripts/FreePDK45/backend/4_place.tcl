@@ -2,6 +2,14 @@
 # Placement
 #-------------------------------------------------------------------------------
 
+proc do_power_analysis {report_folder} {
+    set_default_switching_activity -input_activity 0.2 -seq_activity 0.1
+    propagate_activity
+    set_power_output_dir pnr_reports/$report_folder
+    report_power -cap -pg_net -format=detailed -outfile design.rpt.gz
+    report_power -clock_network all -outfile clock.rpt.gz
+    # write_tcf pnr_reports/$report_folder/activity.tcf
+}
 
 # TODO: verify there's no tapcell
 # deleteFiller -cell $TAPCELL
@@ -50,16 +58,6 @@ report_timing -max_paths 100 > pnr_reports/place_opt_timing.rpt.gz
 defOut pnr_out/place.def
 summaryReport -outfile pnr_reports/placement_summary.rpt
 
-set netFile "pnr_reports/_net_info.txt"
-set netFd [open $netFile w]
-set cellFile "pnr_reports/_cell_info.txt"
-set cellFd [open $cellFile w]
-# 
-# getNetInfo $netFd
-# getCellInfo $cellFd
-
-# close $netFd
-# close $cellFd
 
 # exec gzip $cellFile $netFile &
 
