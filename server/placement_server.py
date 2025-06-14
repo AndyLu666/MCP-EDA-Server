@@ -99,11 +99,9 @@ def place_run(req: PlReq):
     # place_tcl = BACKEND / "4_place.tcl"
     # files_arg = str(place_tcl)
 
-    setup_tcl     = BACKEND / "1_setup.tcl"
     place_tcl = BACKEND / "4_place.tcl"
 
     files_list = [
-        str(setup_tcl),
         str(place_tcl),
     ]
     files_arg = " ".join(files_list)
@@ -141,4 +139,4 @@ def place_run(req: PlReq):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("placement_server:app", host="0.0.0.0", port=3337, reload=False)
+    uvicorn.run("placement_server:app", host="0.0.0.0", port=3937, reload=False)
