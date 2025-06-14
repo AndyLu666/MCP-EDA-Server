@@ -2,6 +2,16 @@
 # Routing
 #-------------------------------------------------------------------------------
 
+proc do_power_analysis {report_folder} {
+    set_default_switching_activity -input_activity 0.2 -seq_activity 0.1
+    propagate_activity
+    set_power_output_dir pnr_reports/$report_folder
+    report_power -cap -pg_net -format=detailed -outfile design.rpt.gz
+    report_power -clock_network all -outfile clock.rpt.gz
+    # write_tcf pnr_reports/$report_folder/activity.tcf
+}
+
+
 set routing_start_time [clock seconds]
 
 setNanoRouteMode -routeWithTimingDriven false -routeDesignFixClockNets true
