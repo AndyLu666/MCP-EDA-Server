@@ -123,13 +123,9 @@ def save_run(req: SaveReq):
         )
 
     # ── 组装 Innovus 命令 ───────────────────────────────────
-    config_tcl = ROOT / "config.tcl"
-    tech_tcl   = ROOT / "scripts" / req.tech / "tech.tcl"
-    files_arg  = f"{config_tcl} {tech_tcl} {SAVE_TCL}"
-
     top = req.top_module or req.design
-    exec_cmd = f'restoreDesign "{route_enc}" {top}; source "{SAVE_TCL}"'
-    innovus_cmd = f'innovus -no_gui -batch -execute "{exec_cmd}" -files "{files_arg}"'
+    exec_cmd = f'restoreDesign "{route_enc}" {top} '
+    innovus_cmd = f'innovus -no_gui -batch -execute "{exec_cmd}" -files "{SAVE_TCL}"'
 
     ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = LOG_DIR / f"{req.design}_save_{ts}.log"
