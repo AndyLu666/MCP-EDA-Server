@@ -15,7 +15,6 @@ from typing import Dict, Optional
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-# ────────── ENV & PATH ──────────
 os.environ["PATH"] = (
     "/opt/cadence/innovus221/tools/bin:"
     "/opt/cadence/genus172/bin:" + os.environ.get("PATH", "")
@@ -37,20 +36,18 @@ logging.basicConfig(
 BACKEND   = ROOT / "scripts" / "FreePDK45" / "backend"
 SAVE_TCL  = BACKEND / "8_save_design.tcl"
 
-# 每一项：(返回 JSON 中的键, 需要匹配的通配符列表)
 ART_PATTERNS = [
     ("gds",      ["*.gds", "*.gds.gz"]),
     ("def",      ["*.def"]),
     ("lef",      ["*.lef"]),
     ("spef",     ["*.spef", "*.spef.gz"]),
-    ("sdc",      ["*.sdc"]),
+    # ("sdc",      ["*.sdc"]),
     ("verilog",  ["*.v", "*.verilog"]),
-    ("sdf",      ["*.sdf"]),
-    ("emp",      ["*.emp"]),
-    ("enc.dat",  ["*.enc.dat"]),
+    # ("sdf",      ["*.sdf"]),
+    # ("emp",      ["*.emp"]),
+    # ("enc.dat",  ["*.enc.dat"]),
 ]
 
-# ────────── Pydantic models ──────────
 class SaveReq(BaseModel):
     design:     str
     tech:       str = "FreePDK45"
@@ -65,7 +62,6 @@ class SaveResp(BaseModel):
     artifacts: Dict[str, str]
     tarball:   Optional[str] = None
 
-# ────────── helpers ──────────
 def run(cmd: str, logfile: pathlib.Path, cwd: pathlib.Path):
     with logfile.open("w") as lf, subprocess.Popen(
         cmd,
@@ -83,21 +79,16 @@ def run(cmd: str, logfile: pathlib.Path, cwd: pathlib.Path):
         raise RuntimeError("command exit %d" % p.returncode)
 
 def locate_route_enc(pnr_save: pathlib.Path) -> Optional[pathlib.Path]:
-    """
-    在 pnr_save 目录下依次查找 route_opt.enc.dat / detail_route.enc.dat /
-    route.enc.dat，找到就返回 Path，否则 None。
-    """
     for name in (
         "route_opt.enc.dat",
         "detail_route.enc.dat",
-        "route.enc.dat",          # 向后兼容旧脚本
+        "route.enc.dat",         
     ):
         fp = pnr_save / name
         if fp.exists():
             return fp
     return None
 
-# ────────── FastAPI ──────────
 app = FastAPI(title="MCP · Save Service")
 
 @app.post("/save/run", response_model=SaveResp)
@@ -112,7 +103,6 @@ def save_run(req: SaveReq):
             artifacts={},
         )
 
-    # ── 选取最终 *.enc.dat ───────────────────────────────────
     pnr_save = impl_dir / "pnr_save"
     route_enc = locate_route_enc(pnr_save)
     if route_enc is None:
@@ -122,10 +112,19 @@ def save_run(req: SaveReq):
             artifacts={},
         )
 
-    # ── 组装 Innovus 命令 ───────────────────────────────────
     top = req.top_module or req.design
-    exec_cmd = f'restoreDesign "{route_enc}" {top} '
-    innovus_cmd = f'innovus -no_gui -batch -execute "{exec_cmd}" -files "{SAVE_TCL}"'
+
+    exec_cmd = (
+        f'set env(TOP_NAME) "{top}"; '          # ← 新增：给 Tcl 的 env 数组赋值
+        f'restoreDesign "{route_enc}" {top}; '  # 末尾要加分号
+        f'source "{SAVE_TCL}"'                  # 继续执行 save_design.tcl
+    )
+
+    innovus_cmd = (
+        f'innovus -no_gui -batch '
+        f'-execute "{exec_cmd}" '
+        f'-files "{SAVE_TCL}"'                  # 只要 8_save_design.tcl 就够
+    )
 
     ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = LOG_DIR / f"{req.design}_save_{ts}.log"
@@ -135,7 +134,6 @@ def save_run(req: SaveReq):
     except Exception as e:
         return SaveResp(status=f"error: {e}", log_path=str(log_file), artifacts={})
 
-    # ── 收集输出文件 ─────────────────────────────────────────
     out_dir   = impl_dir / "pnr_out"
     artifacts: Dict[str, str] = {}
     for key, patterns in ART_PATTERNS:
@@ -147,7 +145,6 @@ def save_run(req: SaveReq):
                 break
         artifacts[key] = hit
 
-    # ── 可选打包 ────────────────────────────────────────────
     tar_path = None
     if req.archive:
         deliver_dir = ROOT / "deliverables"; deliver_dir.mkdir(exist_ok=True)
@@ -165,7 +162,6 @@ def save_run(req: SaveReq):
         tarball=str(tar_path) if tar_path else None,
     )
 
-# ────────── main ──────────
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
