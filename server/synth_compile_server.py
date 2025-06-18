@@ -21,7 +21,6 @@ class CompileResp(BaseModel):
     reports:  dict
 
 def run_shell(cmd: str, logfile: pathlib.Path):
-    """在项目根目录执行 `cmd`（bash），stdout+stderr→logfile。"""
     with logfile.open("w") as lf:
         proc = subprocess.Popen(
             cmd,
