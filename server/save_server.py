@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-MCP · Design Packaging / Save Service
-"""
+
 import datetime
 import logging
 import os
@@ -115,15 +113,15 @@ def save_run(req: SaveReq):
     top = req.top_module or req.design
 
     exec_cmd = (
-        f'set env(TOP_NAME) "{top}"; '          # ← 新增：给 Tcl 的 env 数组赋值
-        f'restoreDesign "{route_enc}" {top}; '  # 末尾要加分号
-        f'source "{SAVE_TCL}"'                  # 继续执行 save_design.tcl
+        f'set env(TOP_NAME) "{top}"; '         
+        f'restoreDesign "{route_enc}" {top}; '  
+        f'source "{SAVE_TCL}"'                  
     )
 
     innovus_cmd = (
         f'innovus -no_gui -batch '
         f'-execute "{exec_cmd}" '
-        f'-files "{SAVE_TCL}"'                  # 只要 8_save_design.tcl 就够
+        f'-files "{SAVE_TCL}"'                  
     )
 
     ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
