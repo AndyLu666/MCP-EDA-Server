@@ -6,8 +6,8 @@ The platform consists of **seven small, single-purpose HTTP microservices** that
 
 | Stage                    | Service Script(s)                                               | Port(s)     |
 |--------------------------|------------------------------------------------------------------|-------------|
-| Synthesis                | `setup_server.py`, `compile_server.py`                          | 3333, 3334  |
-| Physical Implementation  | `floorplan_server.py`, `powerplan_server.py`, `placement_server.py`, `cts_server.py`, `route_server.py`, `save_server.py` | 3335–3340   |
+| Synthesis                | `setup_server.py`, `compile_server.py`                          | 13333, 13334  |
+| Physical Implementation  | `floorplan_server.py`, `powerplan_server.py`, `placement_server.py`, `cts_server.py`, `route_server.py`, `save_server.py` | 13335–13440   |
 
 ---
 
@@ -25,7 +25,7 @@ All endpoints accept the following fields:
 
 ## 2. Endpoint Responsibilities & Accepted Parameters
 
-### `/setup/run` (Port 3333) – DC setup
+### `/setup/run` (Port 13333) – DC setup
 
 Initializes Synopsys Design Compiler, loads libraries, applies constraints.
 
@@ -37,7 +37,7 @@ Initializes Synopsys Design Compiler, loads libraries, applies constraints.
 
 ---
 
-### `/compile/run` (Port 3334) – DC compile
+### `/compile/run` (Port 13334) – DC compile
 
 Maps RTL to gates, returns timing/area/power reports and a synthesis version `syn_ver`.
 
@@ -50,7 +50,7 @@ Maps RTL to gates, returns timing/area/power reports and a synthesis version `sy
 
 ---
 
-### `/floorplan/run` (Port 3335) – Innovus floorplan
+### `/floorplan/run` (Port 13335) – Innovus floorplan
 
 Creates die outline, IO ring, macro rows; generates `impl_ver`.
 
@@ -63,7 +63,7 @@ Creates die outline, IO ring, macro rows; generates `impl_ver`.
 
 ---
 
-### `/power/run` (Port 3336) – Power grid
+### `/power/run` (Port 13336) – Power grid
 
 Builds power grid: rings, stripes, vias.
 
@@ -76,7 +76,7 @@ Builds power grid: rings, stripes, vias.
 
 ---
 
-### `/place/run` (Port 3337) – Standard-cell placement
+### `/place/run` (Port 13337) – Standard-cell placement
 
 Performs placement with pre-CTS optimization.
 
@@ -89,7 +89,7 @@ Performs placement with pre-CTS optimization.
 
 ---
 
-### `/cts/run` (Port 3338) – Clock-tree synthesis
+### `/cts/run` (Port 13338) – Clock-tree synthesis
 
 Performs CTS and post-CTS optimization.
 
@@ -102,7 +102,7 @@ Performs CTS and post-CTS optimization.
 
 ---
 
-### `/route/run` (Port 3339) – Routing
+### `/route/run` (Port 13339) – Routing
 
 Global + detailed routing, then timing/DRC clean-up.
 
@@ -117,7 +117,7 @@ Global + detailed routing, then timing/DRC clean-up.
 
 ---
 
-### `/save/run` (Port 3340) – Final output
+### `/save/run` (Port 13440) – Final output
 
 Writes `.gds`, `.def`, `.sdf`.
 
