@@ -1,1 +1,0 @@
-/home/yl996/proj/mcp-eda-example/designs/des/FreePDK45/synthesis/cpV1_clkP1_drcV1/results/des3.mapped.sdc
