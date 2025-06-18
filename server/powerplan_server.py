@@ -84,7 +84,6 @@ def run(cmd: str, log_file: pathlib.Path, cwd: pathlib.Path, env_extra: dict):
     if p.returncode != 0:
         raise RuntimeError(f"command exited {p.returncode}")
 
-# ────────────────── FastAPI App ──────────────────
 app = FastAPI(title="MCP · Power-plan Service")
 
 @app.post("/power/run", response_model=PwrResp)
