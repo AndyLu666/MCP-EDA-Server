@@ -40,6 +40,7 @@ The goal is to let you:
 │   ├── route_server.py
 │   └── save_server.py
 └── run_pipeline.sh          # one‑shot driver
+└── restart_servers.sh       # start all the servers
 ```
 
 ---
@@ -65,7 +66,7 @@ The goal is to let you:
 
 Behind the scenes the script:
 
-1. Spins up (or re‑uses) the 8 REST services on localhost `:3333…3340`.
+1. Spins up (or re‑uses) the 8 REST services on localhost `:13333…13440`.
 2. Calls them in sequence, passing the parameter sets from `config/*.csv`.
 3. Streams JSON back to the console for each stage; artefacts go under  
    `designs/des/FreePDK45/{synthesis,implementation}/…`.
@@ -81,7 +82,7 @@ Every stage is a tiny FastAPI app exposing **`POST /<stage>/run`**.
 Example – **placement**:
 
 ```bash
-curl -X POST http://localhost:3337/place/run      -H 'Content-Type: application/json'      -d '{
+curl -X POST http://localhost:13337/place/run      -H 'Content-Type: application/json'      -d '{
            "design": "des",
            "tech":   "FreePDK45",
            "impl_ver":"cpV1_clkP1_drcV1__g0_p0",
@@ -97,14 +98,14 @@ All servers honour two rules:
 
 | Port | Service | Endpoint | Depends on |
 |------|---------|----------|------------|
-| 3333 | `synth_setup_server`   | `/setup/run`      | source RTL |
-| 3334 | `synth_compile_server` | `/compile/run`    | setup artefacts |
-| 3335 | `floorplan_server`     | `/floorplan/run`  | `.mapped.v/.sdc` |
-| 3337 | `placement_server`     | `/place/run`      | `floorplan.enc.dat` |
-| 3338 | `cts_server`           | `/cts/run`        | placement |
-| 3336 | `powerplan_server`     | `/power/run`      | floorplan (striped) |
-| 3339 | `route_server`         | `/route/run`      | CTS |
-| 3340 | `save_server`          | `/save/run`       | route |
+| 13333 | `synth_setup_server`   | `/setup/run`      | source RTL |
+| 13334 | `synth_compile_server` | `/compile/run`    | setup artefacts |
+| 13335 | `floorplan_server`     | `/floorplan/run`  | `.mapped.v/.sdc` |
+| 13337 | `placement_server`     | `/place/run`      | `floorplan.enc.dat` |
+| 13338 | `cts_server`           | `/cts/run`        | placement |
+| 13336 | `powerplan_server`     | `/power/run`      | floorplan (striped) |
+| 13339 | `route_server`         | `/route/run`      | CTS |
+| 13340 | `save_server`          | `/save/run`       | route |
 
 See **`docs/api_examples.http`** for ready‑to‑paste requests in VS Code.
 
@@ -141,7 +142,7 @@ Change a cell in CSV → commit → rerun only the affected stage.
 | `logs/<stage>/` | Full tool std‑out per run (timestamped) |
 | `designs/.../synthesis/<syn_ver>/results` | `.mapped.v`, `.sdc`, QOR |
 | `designs/.../implementation/<impl_ver>/pnr_reports/` | `floorplan_summary.rpt`, `place_timing.rpt.gz`, … |
-| `pnr_save/` | **`floorplan.enc.dat`**, **`final.enc.dat`** – for restore |
+| `pnr_save/` | **`floorplan.enc`**, **`final.enc`** – for restore |
 | `pnr_out/` | DEF, SPEF, net‑delays, etc. |
 
 Reports that matter (WNS/TNS, DRC counts, routing congestion) are **collected and returned in JSON** by each service – so your CI can grep them directly.
@@ -184,7 +185,6 @@ No other path hard‑coding required.
 
 ## 10. License
 
-See [LICENSE](LICENSE).  Free to use for academic & evaluation purposes; no guarantees.
 
 ---
 
