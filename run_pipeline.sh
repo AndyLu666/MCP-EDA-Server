@@ -25,25 +25,25 @@ call() {
 }
 
 
-# call "1. Synth Setup" \
-#   http://localhost:13333/setup/run \
-#   -H 'Content-Type: application/json' \
-#   -d "{\"design\":\"$design\",\"tech\":\"$tech\",\"version_idx\":0,\"force\":true}"
+call "1. Synth Setup" \
+  http://localhost:13333/setup/run \
+  -H 'Content-Type: application/json' \
+  -d "{\"design\":\"$design\",\"tech\":\"$tech\",\"version_idx\":0,\"force\":true}"
 
 
-# call "2. Synth Compile" \
-#   http://localhost:13334/compile/run \
-#   -H 'Content-Type: application/json' \
-#   -d "{\"design\":\"$design\",\"tech\":\"$tech\",\"version_idx\":0,\"force\":true}"
+call "2. Synth Compile" \
+  http://localhost:13334/compile/run \
+  -H 'Content-Type: application/json' \
+  -d "{\"design\":\"$design\",\"tech\":\"$tech\",\"version_idx\":0,\"force\":true}"
 synth_dir=$(ls -dt designs/"$design"/"$tech"/synthesis/* | head -1)
 syn_ver=$(basename "$synth_dir")
 echo "⤷ Using syn_ver = $syn_ver"
 
 
-# call "3. Floorplan" \
-#   http://localhost:13335/floorplan/run \
-#   -H 'Content-Type: application/json' \
-#   -d "{\"design\":\"$design\",\"top_module\":\"des3\",\"tech\":\"$tech\",\"syn_ver\":\"$syn_ver\",\"g_idx\":$g_idx,\"p_idx\":$p_idx,\"force\":true}"
+call "3. Floorplan" \
+  http://localhost:13335/floorplan/run \
+  -H 'Content-Type: application/json' \
+  -d "{\"design\":\"$design\",\"top_module\":\"des3\",\"tech\":\"$tech\",\"syn_ver\":\"$syn_ver\",\"g_idx\":$g_idx,\"p_idx\":$p_idx,\"force\":true}"
 
 impl_ver="${syn_ver}__g${g_idx}_p${p_idx}"
 echo "⤷ Using impl_ver = $impl_ver"
@@ -56,10 +56,10 @@ else
 fi
 
 
-# call "4. Powerplan" \
-#   http://localhost:13336/power/run \
-#   -H 'Content-Type: application/json' \
-#   -d "{\"design\":\"$design\",\"top_module\":\"des3\",\"tech\":\"$tech\",\"impl_ver\":\"$impl_ver\",\"restore_enc\":\"$floorplan_enc\",\"force\":true}"
+call "4. Powerplan" \
+  http://localhost:13336/power/run \
+  -H 'Content-Type: application/json' \
+  -d "{\"design\":\"$design\",\"top_module\":\"des3\",\"tech\":\"$tech\",\"impl_ver\":\"$impl_ver\",\"restore_enc\":\"$floorplan_enc\",\"force\":true}"
 
 powerplan_enc="designs/$design/$tech/implementation/$impl_ver/pnr_save/powerplan.enc.dat"
 if [[ ! -d "$powerplan_enc" ]]; then
@@ -69,10 +69,10 @@ else
 fi
 
 
-# call "5. Placement" \
-#   http://localhost:13337/place/run \
-#   -H 'Content-Type: application/json' \
-#   -d "{\"design\":\"$design\",\"tech\":\"$tech\",\"impl_ver\":\"$impl_ver\",\"g_idx\":$g_idx,\"p_idx\":$p_idx,\"restore_enc\":\"$powerplan_enc\",\"top_module\":\"des3\",\"force\":true}"
+call "5. Placement" \
+  http://localhost:13337/place/run \
+  -H 'Content-Type: application/json' \
+  -d "{\"design\":\"$design\",\"tech\":\"$tech\",\"impl_ver\":\"$impl_ver\",\"g_idx\":$g_idx,\"p_idx\":$p_idx,\"restore_enc\":\"$powerplan_enc\",\"top_module\":\"des3\",\"force\":true}"
 
 placement_enc="designs/$design/$tech/implementation/$impl_ver/pnr_save/placement.enc.dat"
 if [[ ! -d "$placement_enc" ]]; then
@@ -82,10 +82,10 @@ else
 fi
 
 
-# call "6. CTS" \
-#   http://localhost:13338/cts/run \
-#   -H 'Content-Type: application/json' \
-#   -d "{\"design\":\"$design\",\"top_module\":\"des3\",\"tech\":\"$tech\",\"impl_ver\":\"$impl_ver\",\"g_idx\":$g_idx,\"c_idx\":$c_idx,\"restore_enc\":\"$placement_enc\",\"force\":true}"
+call "6. CTS" \
+  http://localhost:13338/cts/run \
+  -H 'Content-Type: application/json' \
+  -d "{\"design\":\"$design\",\"top_module\":\"des3\",\"tech\":\"$tech\",\"impl_ver\":\"$impl_ver\",\"g_idx\":$g_idx,\"c_idx\":$c_idx,\"restore_enc\":\"$placement_enc\",\"force\":true}"
 
 cts_enc="designs/$design/$tech/implementation/$impl_ver/pnr_save/cts.enc.dat"
 if [[ ! -d "$cts_enc" ]]; then
@@ -95,10 +95,10 @@ else
 fi
 
 
-# call "7. Routing" \
-#   http://localhost:13339/route/run \
-#   -H 'Content-Type: application/json' \
-#   -d "{\"design\":\"$design\",\"top_module\":\"des3\",\"tech\":\"$tech\",\"impl_ver\":\"$impl_ver\",\"g_idx\":$g_idx,\"p_idx\":$p_idx,\"c_idx\":$c_idx,\"restore_enc\":\"$cts_enc\",\"force\":true}"
+call "7. Routing" \
+  http://localhost:13339/route/run \
+  -H 'Content-Type: application/json' \
+  -d "{\"design\":\"$design\",\"top_module\":\"des3\",\"tech\":\"$tech\",\"impl_ver\":\"$impl_ver\",\"g_idx\":$g_idx,\"p_idx\":$p_idx,\"c_idx\":$c_idx,\"restore_enc\":\"$cts_enc\",\"force\":true}"
 
 route_enc="designs/$design/$tech/implementation/$impl_ver/pnr_save/route_opt.enc.dat"
 if [[ ! -d "$route_enc" ]]; then
